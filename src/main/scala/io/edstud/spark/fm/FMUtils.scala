@@ -11,7 +11,8 @@ object FMUtils {
     */
     def registerKryoClasses(conf: SparkConf) {
         conf.registerKryoClasses(Array(
-                //classOf[DenseMatrix]
+                classOf[FMModel],
+                classOf[FMLearn]
             )
         )
     }
@@ -25,7 +26,7 @@ object FMUtils {
                            val label = items.head.toDouble
                            val (indices, values) = items.tail.filter(_.nonEmpty).map { item =>
                                val indexAndValue = item.split(':')
-                               val index = indexAndValue(0).toInt - 1 // Convert 1-based indices to 0-based.
+                               val index = indexAndValue(0).toInt
                                val value = indexAndValue(1).toDouble
                                (index, value)
                            }.unzip

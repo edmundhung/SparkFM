@@ -8,19 +8,13 @@ class FactorizationMachines (
     val dataset: DataSet,
     val task: Task) extends FM {
 
-    var num_factor: Int = 8
-
-    def withFactorNumber(num: Int): this.type = {
-        num_factor = num
-
-        this
-    }
-
     def withRelation(): this.type = {
         this
     }
 
     def learnWith(fml: FMLearn): FMModel = {
+        fml.learn(dataset)
+        /*
         if (task == Regression) {
             fml.learnRegression(dataset)
         } else if (task == Classification) {
@@ -28,6 +22,7 @@ class FactorizationMachines (
         } else {
             throw new Exception("No such task")
         }
+        */
     }
 
 }

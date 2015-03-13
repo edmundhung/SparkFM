@@ -11,14 +11,22 @@ abstract class Model () extends Serializable with Logging {
     def predict(features: SparseVector[Double]): Double
 
     def computeRMSE(dataset: DataSet): Double = {
-        math.sqrt(dataset.rdd.mapValues(predict).map(r => r._1 - r._2).map(e => math.pow(e, 2)).mean())
+        logDebug("Start computing RMSE...")
+        val rmse = math.sqrt(dataset.rdd.mapValues(predict).map(r => r._1 - r._2).map(e => math.pow(e, 2)).mean())
+        logDebug("Result RMSE = " + rmse)
+
+        rmse
     }
 
     def computeMAE(dataset: DataSet): Double = {
-        dataset.rdd.mapValues(predict).map(r => r._1 - r._2).map(e => math.abs(e)).mean()
+        logDebug("Start computing MAE...")
+        val mae = dataset.rdd.mapValues(predict).map(r => r._1 - r._2).map(e => math.abs(e)).mean()
+        logDebug("Result MAE = " + mae)
+
+        mae
     }
 
-    def evaluate(dataset: DataSet): (Double, Double) = {
+    def evaluateRegression(dataset: DataSet): (Double, Double) = {
         (computeRMSE(dataset), computeMAE(dataset))
     }
 

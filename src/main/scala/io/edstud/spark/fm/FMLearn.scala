@@ -10,8 +10,10 @@ abstract class FMLearn (
     val num_factor: Int,
     val num_iter: Int) extends Serializable with Logging  {
 
-    def learnRegression(data: DataSet): FMModel
+    def learn(data: DataSet): FMModel
 
-    def learnClassification(data: DataSet): FMModel
+    protected def logParameter(name: String, value: Double) {
+        //logDebug("Updated " + name + " to " + value)
+    }
 
 }

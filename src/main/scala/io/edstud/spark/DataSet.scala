@@ -1,71 +1,89 @@
 package io.edstud.spark
 
-import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.SparkContext._
 import org.apache.spark.storage.StorageLevel
 import breeze.linalg.SparseVector
 
-class DataCollection (
-    val collection: Array[RDD[(Double, SparseVector[Double])]],
-    val num_feature: Int = 0) extends Serializable {
+class DataSet(protected val dataset: RDD[(Double, SparseVector[Double])] = null) extends Serializable {
 
-    @transient lazy val trainingSet = new DataSet(collection(0))
-    @transient lazy val testSet = new DataSet(collection(1))
-    @transient lazy val validationSet = new DataSet(collection(2))
+    val isEmpty: Boolean = rdd == null
 
-    @transient lazy val dimension = if (num_feature > 0) {
-        num_feature
-    } else {
-        List(trainingSet.dimension, testSet.dimension, validationSet.dimension).max
+    def rdd: RDD[(Double, SparseVector[Double])] = {
+        if (isEmpty) throw new Exception()
+
+        dataset
     }
 
-    def cache(): this.type = {
-        collection.foreach(_.cache)
+    def inputs: RDD[SparseVector[Double]] = {
+        if (isEmpty) throw new Exception()
+
+        dataset.map(data => data._2)
+    }
+
+    def targets: RDD[Double] = {
+        if (isEmpty) throw new Exception()
+
+        dataset.map(data => data._1)
+    }
+
+    //@transient lazy val isEmpty: Boolean = rdd.partitions.length == 0 || rdd.take(1).length == 0
+
+    // toInt: Assuming the datasets are less then 2,147,483,647
+    @transient lazy val size: Int = {
+        if (!isEmpty) {
+            dataset.count.toInt
+        } else {
+            0
+        }
+    }
+
+    @transient lazy val dimension: Int = {
+        if (!isEmpty) {
+            inputs.map(_.index.lastOption.getOrElse(0)).reduce(math.max) + 1
+        } else {
+            0
+        }
+    }
+
+    val transposeInput: RDD[SparseVector[Double]] = {
+        if (isEmpty) throw new Exception()
+
+        val count = size
+        inputs.zipWithIndex.flatMap { case (input, index) =>
+            input.activeKeysIterator.zip(input.activeValuesIterator.map((index.toInt,_)))
+        }.groupByKey.map(_._2.unzip).map { case (indices, values) =>
+            new SparseVector(indices.toArray, values.toArray, count)
+        }
+    }
+
+    def cache(): DataSet = {
+        if (!isEmpty) dataset.cache()
 
         this
     }
 
-}
+    def unpersist(): DataSet = {
+        if (!isEmpty) dataset.unpersist()
 
-object DataCollection {
+        this
 
-    def apply(
-        rawData: RDD[(Double, SparseVector[Double])],
-        train: Double,
-        test: Double,
-        validate: Double = 0): DataCollection = {
-
-        val splits = rawData.randomSplit(Array(train, test, validate))
-        val dimension = rawData.map(data => data._2.activeSize).max()
-        val collection = new DataCollection(splits, dimension)
-
-        collection
     }
 
 }
 
-class DataSet(val rdd: RDD[(Double, SparseVector[Double])]) extends Serializable {
+object DataSet {
 
-    // toInt: Assuming the datasets are less then 2,147,483,647
-    @transient lazy val size: Int = rdd.count.toInt
+    def apply(rdd: RDD[(Double, SparseVector[Double])]): DataSet = {
+        new DataSet(rdd)
+    }
 
-    @transient lazy val dimension: Int = rdd.map(data => data._2.activeSize).max()
+    def empty(): DataSet = {
+        new DataSet()
+    }
 
-    @transient lazy val inputs: RDD[(SparseVector[Double])] = rdd.map(data => data._2)
-
-    @transient lazy val targets: RDD[Double] = rdd.map(data => data._1)
-
-    @transient lazy val transpose: RDD[SparseVector[Double]] = {
-        inputs.zipWithIndex.flatMap { case (input, index) => {
-                input.activeKeysIterator.zip(input.activeValuesIterator.map((index.toInt,_)))
-            }
-        }.groupByKey.map { case (id, pairs) => {
-                val v = SparseVector.zeros[Double](dimension)
-                pairs.foreach(p => v(p._1) = p._2)
-
-                v
-            }
-        }
+    def dimension(rdd: RDD[(Double, SparseVector[Double])]): Int = {
+        new DataSet(rdd).dimension
     }
 
 }
