@@ -27,7 +27,11 @@ abstract class Model () extends Serializable with Logging {
     }
 
     def evaluateRegression(dataset: DataSet): (Double, Double) = {
-        (computeRMSE(dataset), computeMAE(dataset))
+        dataset.cache()
+        val rmse = computeRMSE(dataset)
+        val mae = computeMAE(dataset)
+
+        (rmse, mae)
     }
 
     def evaluateClassification(dataset: DataSet): Double = {

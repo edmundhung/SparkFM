@@ -7,33 +7,16 @@ import breeze.linalg.{SparseVector, DenseVector, DenseMatrix, sum}
 import io.edstud.spark.fm.{FMModel,FMLearn}
 import io.edstud.spark.DataSet
 
-class ALS protected (num_factor: Int, num_iter: Int) extends FMLearn (num_factor, num_iter) {
+class ALS protected () extends FMLearn {
 
     var e: Map[Long, Double] = null
     var q: Map[Long, Double] = null
-
-    override def learn(dataset: DataSet): FMModel = {
-        logInfo("Initializing FM Model...")
-        var fm = new FMModel(dataset.dimension, num_factor)
-
-        logInfo("Starting Learning Process...")
-
-        for (i <- 0 until num_iter) {
-            logInfo("Current Learning Iteration: " + i)
-            fm = draw(fm, dataset)
-        }
-
-        dataset.unpersist()
-
-        fm
-    }
 
     protected def precomputeTermE(fm: FMModel, dataset: DataSet): Map[Long, Double] = {
         val map = dataset.rdd
                     .mapValues(fm.predict)
                     .map(r => r._1 - r._2)
                     .zipWithIndex
-                    //.mapValues(_.toInt)
                     .map(_.swap)
                     .collectAsMap
 
@@ -49,7 +32,7 @@ class ALS protected (num_factor: Int, num_iter: Int) extends FMLearn (num_factor
         Map[Long, Double](map.toSeq: _*)
     }
 
-    protected def draw(fm: FMModel, dataset: DataSet): FMModel = {
+    override def learn(fm: FMModel, dataset: DataSet): FMModel = {
 
         logDebug("Precomputing e(x,y|theta)...")
         e = precomputeTermE(fm, dataset)
@@ -60,14 +43,12 @@ class ALS protected (num_factor: Int, num_iter: Int) extends FMLearn (num_factor
         if (fm.k0) {
             logDebug("Start learning w0")
             fm.w0 = drawTheta(fm.w0, SparseVector.fill[Double](dataset.size)(1), fm.reg0)
-            logParameter("w0", fm.w0)
         }
 
         if (fm.k1) {
             logDebug("Start learning W")
             for (id <- 0 until fm.num_attribute) {
                 fm.w(id) = drawTheta(fm.w(id), data_t(id), fm.regw)
-                logParameter("w(" + id + ")", fm.w(id))
             }
 
         }
@@ -76,7 +57,7 @@ class ALS protected (num_factor: Int, num_iter: Int) extends FMLearn (num_factor
         val v = fm.v.copy
         for (f <- 0 until fm.num_factor) {
 
-            logDebug("Precomputing q(x,f|theta) for f = " + f + "...")
+            logDebug("Precomputing q(x,f|theta) for f = " + (f + 1)+ "...")
             q = precomputeTermQ(fm, dataset, f)
 
             for (id <- 0 until fm.num_attribute) {
@@ -90,8 +71,6 @@ class ALS protected (num_factor: Int, num_iter: Int) extends FMLearn (num_factor
                 }
 
                 fm.v(f, id) = v(f, id)
-
-                logParameter("v(" + f + ", " + id + ")", fm.v(f, id))
             }
 
         }
@@ -124,10 +103,8 @@ class ALS protected (num_factor: Int, num_iter: Int) extends FMLearn (num_factor
 
 object ALS {
 
-    def run(num_factor: Int, num_iter: Int): ALS = {
-        val learning = new ALS(num_factor, num_iter)
-
-        learning
+    def run(): ALS = {
+        new ALS()
     }
 
 }

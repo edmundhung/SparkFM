@@ -1,5 +1,6 @@
 package io.edstud.spark
 
+import org.apache.spark.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.SparkContext._
 import org.apache.spark.storage.StorageLevel
@@ -9,10 +10,10 @@ class DataCollection protected (
     val trainingSet: DataSet,
     val testSet: DataSet,
     val validationSet: DataSet,
-    val num_feature: Int = 0) extends Serializable {
+    val numFeature: Int = 0) extends Logging with Serializable {
 
-    @transient lazy val dimension = if (num_feature > 0) {
-        num_feature
+    @transient lazy val dimension = if (numFeature > 0) {
+        numFeature
     } else {
         List(
             trainingSet.dimension,
@@ -40,9 +41,9 @@ object DataCollection {
 
         val data = rawData.randomSplit(weights)
         val collection = new DataCollection(
-            if (trainWeight > 0) DataSet(data(0)) else DataSet.empty(),
-            if (testWeight > 0) DataSet(data(1)) else DataSet.empty(),
-            if (validateWeight > 0) DataSet(data(2)) else DataSet.empty(),
+            if (trainWeight > 0) DataSet("TrainingSet", data(0)) else DataSet.empty("TrainingSet"),
+            if (testWeight > 0) DataSet("TestSet", data(1)) else DataSet.empty("TestSet"),
+            if (validateWeight > 0) DataSet("ValidationSet", data(2)) else DataSet.empty("ValidationSet"),
             DataSet.dimension(rawData)
         )
 
