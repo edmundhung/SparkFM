@@ -7,65 +7,39 @@ import org.apache.spark.storage.StorageLevel
 import breeze.linalg.SparseVector
 
 class DataSet(
-    protected val name: String = "",
-    protected val dataset: RDD[(Double, SparseVector[Double])] = null
-    ) extends Logging with Serializable {
+    protected val dataset: RDD[(Double, SparseVector[Double])],
+    protected val name: String = "") extends Logging with Serializable {
 
-    val isEmpty: Boolean = dataset == null
+    val isEmpty: Boolean = dataset.partitions.length == 0 || dataset.take(1).length == 0
 
     def rdd: RDD[(Double, SparseVector[Double])] = {
-        if (!isEmpty) {
-            dataset.setName(name)
-        } else {
-            throw new Exception("EmptySet")
-        }
+        dataset//.setName(name)
     }
 
     def inputs: RDD[SparseVector[Double]] = {
-        if (!isEmpty) {
-            dataset.map(data => data._2).setName(name + ".inputs")
-        } else {
-            throw new Exception("EmptySet")
-        }
+        dataset.map(data => data._2)//.setName(name + ".inputs")
     }
 
     def targets: RDD[Double] = {
-        if (!isEmpty) {
-            dataset.map(data => data._1).setName(name + ".targets")
-        } else {
-            throw new Exception("EmptySet")
-        }
+        dataset.map(data => data._1)//.setName(name + ".targets")
     }
-    //@transient lazy val isEmpty: Boolean = rdd.partitions.length == 0 || rdd.take(1).length == 0
 
     // toInt: Assuming the datasets are less then 2,147,483,647
     @transient lazy val size: Int = {
-        if (!isEmpty) {
-            dataset.count.toInt
-        } else {
-            0
-        }
+        if (!isEmpty) dataset.count.toInt else 0
     }
 
     @transient lazy val dimension: Int = {
-        if (!isEmpty) {
-            inputs.map(_.index.lastOption.getOrElse(0)).reduce(math.max) + 1
-        } else {
-            0
-        }
+        if (!isEmpty) inputs.map(_.index.max).reduce(math.max) else 0
     }
 
     def transposeInput: RDD[SparseVector[Double]] = {
-        if (!isEmpty) {
-            val count = size
-            inputs.zipWithIndex.flatMap { case (input, index) =>
-                input.activeKeysIterator.zip(input.activeValuesIterator.map((index.toInt,_)))
-            }.groupByKey.map(_._2.unzip).map { case (indices, values) =>
-                new SparseVector(indices.toArray, values.toArray, count)
-            }.setName(name + ".inputs.transpose")
-        } else {
-            throw new Exception("EmptySet")
-        }
+        val count = size
+        inputs.zipWithIndex.flatMap { case (input, index) =>
+            input.activeKeysIterator.zip(input.activeValuesIterator.map((index.toInt,_)))
+        }.groupByKey.map(_._2.unzip).map { case (indices, values) =>
+            new SparseVector(indices.toArray, values.toArray, count)
+        }//.setName(name + ".inputs.transpose")
     }
 
     def cache(): DataSet = {
@@ -86,15 +60,11 @@ class DataSet(
 object DataSet {
 
     def apply(name: String, rdd: RDD[(Double, SparseVector[Double])]): DataSet = {
-        new DataSet(name, rdd)
-    }
-
-    def empty(name: String): DataSet = {
-        new DataSet(name)
+        new DataSet(rdd, name)
     }
 
     def dimension(rdd: RDD[(Double, SparseVector[Double])]): Int = {
-        new DataSet("", rdd).dimension
+        new DataSet(rdd).dimension
     }
 
 }

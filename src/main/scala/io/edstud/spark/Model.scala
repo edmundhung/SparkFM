@@ -12,7 +12,9 @@ abstract class Model () extends Serializable with Logging {
 
     def computeRMSE(dataset: DataSet): Double = {
         logDebug("Start computing RMSE...")
-        val rmse = math.sqrt(dataset.rdd.mapValues(predict).map(r => r._1 - r._2).map(e => math.pow(e, 2)).mean())
+        val rmse_sqr = dataset.rdd.mapValues(predict).map(r => r._1 - r._2).map(e => e * e).sum() / dataset.size
+        logDebug("Result RMSE_SQUARE = " + rmse_sqr)
+        val rmse = math.sqrt(rmse_sqr)
         logDebug("Result RMSE = " + rmse)
 
         rmse
@@ -20,22 +22,14 @@ abstract class Model () extends Serializable with Logging {
 
     def computeMAE(dataset: DataSet): Double = {
         logDebug("Start computing MAE...")
-        val mae = dataset.rdd.mapValues(predict).map(r => r._1 - r._2).map(e => math.abs(e)).mean()
+        val mae = dataset.rdd.mapValues(predict).map(r => r._1 - r._2).sum() / dataset.size
         logDebug("Result MAE = " + mae)
 
         mae
     }
 
-    def evaluateRegression(dataset: DataSet): (Double, Double) = {
-        dataset.cache()
-        val rmse = computeRMSE(dataset)
-        val mae = computeMAE(dataset)
-
-        (rmse, mae)
-    }
-
-    def evaluateClassification(dataset: DataSet): Double = {
-        dataset.rdd.mapValues(predict).filter(r => (r._1 >= 0 && r._2 >= 0) || (r._1 < 0 && r._2 < 0)).count / dataset.rdd.count
+    def computeAccuracy(dataset: DataSet): Double = {
+        dataset.rdd.mapValues(predict).filter(r => (r._1 >= 0 && r._2 >= 0) || (r._1 < 0 && r._2 < 0)).count / dataset.size
     }
 
 }

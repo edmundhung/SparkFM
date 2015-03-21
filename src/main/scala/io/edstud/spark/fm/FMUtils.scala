@@ -39,17 +39,29 @@ object FMUtils {
         } else {
             parsed.persist(StorageLevel.MEMORY_ONLY)
             parsed.map { case (label, indices, values) =>
-                indices.lastOption.getOrElse(0)
-            }.reduce(math.max) + 1
+                indices.max
+            }.reduce(math.max)
         }
 
         parsed.map { case (label, indices, values) =>
-            (label, new SparseVector(indices, values, d))
+            (label, new SparseVector(indices, values, d + 1))
         }
 
     }
 
     def loadLibFMFile(sc: SparkContext, path: String, numFeatures: Int): RDD[(Double, SparseVector[Double])] = loadLibFMFile(sc, path, numFeatures, sc.defaultMinPartitions)
     def loadLibFMFile(sc: SparkContext, path: String): RDD[(Double, SparseVector[Double])] = loadLibFMFile(sc, path, -1)
+
+    def saveAsLibSVMFile(data: RDD[(Double, SparseVector[Double])], dir: String) {
+        val dataStr = data.map { case (target, features) =>
+            val sb = new StringBuilder(target.toString)
+            features.activeIterator.foreach { case (i, v) =>
+                sb += ' '
+                sb ++= s"${i + 1}:$v"
+            }
+            sb.mkString
+        }
+        dataStr.saveAsTextFile(dir)
+    }
 
 }

@@ -15,17 +15,17 @@ object Application extends Logging  {
 
         val collection = DataCollection.byRandomSplit(
             rawData = rawData,
-            trainWeight = 0.95,
-            testWeight = 0.05
+            trainWeight = 0.9,
+            testWeight = 0.1
         )
 
         val model = FM(
             dataset = collection.trainingSet,
             numFactor = 8,
-            maxIteration = 10
+            maxIteration = 1
         ).learnWith(ALS.run)
 
-        val (rmse, mae) = model.evaluateRegression(collection.testSet)
+        val rmse = model.computeRMSE(collection.testSet)
 
         sc.stop
 
