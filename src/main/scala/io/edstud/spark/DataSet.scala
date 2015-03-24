@@ -6,53 +6,69 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.storage.StorageLevel
 import breeze.linalg.SparseVector
 
-class DataSet(
-    protected val dataset: RDD[(Double, SparseVector[Double])],
-    protected val name: String = "") extends Logging with Serializable {
+class Features(protected val features: RDD[SparseVector[Double]]) extends Logging with Serializable {
 
-    val isEmpty: Boolean = dataset.partitions.length == 0 || dataset.take(1).length == 0
+    lazy val isEmpty = checkEmpty(features)
 
-    def rdd: RDD[(Double, SparseVector[Double])] = {
-        dataset//.setName(name)
+    lazy val transpose = transposeRDD(features, size)
+
+    lazy val size = computeSize(features)
+
+    lazy val dimension = computeDimension(features)
+
+    protected def checkEmpty(rdd: RDD[SparseVector[Double]]): Boolean = {
+        rdd.partitions.length == 0 || rdd.take(1).length == 0
     }
 
-    def inputs: RDD[SparseVector[Double]] = {
-        dataset.map(data => data._2)//.setName(name + ".inputs")
+    protected def computeSize(rdd: RDD[SparseVector[Double]]): Int = {
+        if (!isEmpty) rdd.count.toInt else 0
     }
 
-    def targets: RDD[Double] = {
-        dataset.map(data => data._1)//.setName(name + ".targets")
+    protected def computeDimension(rdd: RDD[SparseVector[Double]]): Int = {
+        if (!isEmpty) rdd.map(_.index.max).reduce(math.max) else 0
     }
 
-    // toInt: Assuming the datasets are less then 2,147,483,647
-    @transient lazy val size: Int = {
-        if (!isEmpty) dataset.count.toInt else 0
-    }
-
-    @transient lazy val dimension: Int = {
-        if (!isEmpty) inputs.map(_.index.max).reduce(math.max) else 0
-    }
-
-    def transposeInput: RDD[SparseVector[Double]] = {
-        val count = size
-        inputs.zipWithIndex.flatMap { case (input, index) =>
+    protected def transposeRDD(rdd: RDD[SparseVector[Double]], size: Int = 0): RDD[(Int, SparseVector[Double])] = {
+        val count = if (size > 0) { size } else { rdd.count.toInt }
+        rdd.zipWithIndex.flatMap { case (input, index) =>
             input.activeKeysIterator.zip(input.activeValuesIterator.map((index.toInt,_)))
-        }.groupByKey.map(_._2.unzip).map { case (indices, values) =>
+        }.groupByKey.mapValues(_.unzip).mapValues { case (indices, values) =>
             new SparseVector(indices.toArray, values.toArray, count)
-        }//.setName(name + ".inputs.transpose")
+        }.setName("%s.transpose".format(rdd.name))
     }
 
-    def cache(): DataSet = {
-        if (!isEmpty) dataset.cache()
+    def cache(): Features = {
+        if (!isEmpty) features.cache()
 
         this
     }
 
-    def unpersist(): DataSet = {
-        if (!isEmpty) dataset.unpersist()
+    def unpersist(): Features = {
+        if (!isEmpty) features.unpersist()
 
         this
+    }
 
+}
+
+class DataSet(val rdd: RDD[(Double, SparseVector[Double])]) extends Features(rdd.map(_._2)) {
+
+    val inputs = features.setName("%s.inputs".format(rdd.name))
+
+    val targets = rdd.map(_._1).setName("%s.targets".format(rdd.name))
+
+    lazy val transposeInput = transpose
+
+    override def cache(): DataSet = {
+        if (!isEmpty) rdd.cache()
+
+        this
+    }
+
+    override def unpersist(): DataSet = {
+        if (!isEmpty) rdd.unpersist()
+
+        this
     }
 
 }
@@ -60,11 +76,11 @@ class DataSet(
 object DataSet {
 
     def apply(name: String, rdd: RDD[(Double, SparseVector[Double])]): DataSet = {
-        new DataSet(rdd, name)
+        new DataSet(rdd.setName(name))
     }
 
     def dimension(rdd: RDD[(Double, SparseVector[Double])]): Int = {
-        new DataSet(rdd).dimension
+        new DataSet(rdd).size
     }
 
 }

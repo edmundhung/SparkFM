@@ -10,18 +10,18 @@ import io.edstud.spark.DataSet
 
 class ALS protected () extends FMLearn {
 
-    var e: Map[Long, Double] = null
-    var q: Map[Long, Double] = null
+    var e: Map[Int, Double] = null
+    var q: Map[Int, Double] = null
 
-    val emptyRow = SparseVector.zeros[Double](1)
+    //val emptyRow = SparseVector.zeros[Double](1)
 
-    override def learn(fm: FMModel, dataset: DataSet, meta: Metadata): FMModel = {
+    override def learn(fm: FMModel, dataset: DataSet): FMModel = {
 
         logDebug("Precomputing e(x,y|theta)...")
-        e = asMap(precomputeTermE(fm, dataset))
+        e = asMap(precomputeTermE(fm, dataset).zipWithIndex.mapValues(_.toInt).map(_.swap))
 
         logDebug("Precomputing Dataset transpose...")
-        var data_t = dataset.transposeInput.zipWithIndex.map(_.swap).collectAsMap
+        val features = dataset.transposeInput.collectAsMap
 
         if (fm.k0) {
             logDebug("Start learning w0")
@@ -31,7 +31,9 @@ class ALS protected () extends FMLearn {
         if (fm.k1) {
             logDebug("Start learning W")
             for (id <- 0 until fm.num_attribute) {
-                fm.w(id) = drawTheta(fm.w(id), data_t.getOrElse(id, emptyRow), fm.regw)
+                if (features.contains(id)) {
+                    fm.w(id) = drawTheta(fm.w(id), features(id), fm.regw)
+                }
             }
         }
 
@@ -43,15 +45,21 @@ class ALS protected () extends FMLearn {
             q = asMap(precomputeTermQ(fm, dataset, f))
 
             for (id <- 0 until fm.num_attribute) {
-                v(f, id) = drawTheta(fm.v(f, id), data_t.getOrElse(id, emptyRow).mapActivePairs { case (index, value) =>
-                    value * q(index) - value * value * fm.v(f, id)
-                }, fm.regv)
 
-                data_t.getOrElse(id, emptyRow).activeIterator.foreach { case (index, value) =>
-                    q(index) -= value * (fm.v(f, id) - v(f, id))
+                if (features.contains(id) && q.contains(id)) {
+
+                    v(f, id) = drawTheta(fm.v(f, id), features(id).mapActivePairs { case (index, value) =>
+                        value * q(id) - value * value * fm.v(f, id)
+                    }, fm.regv)
+
+                    features(id).activeIterator.foreach { case (index, value) =>
+                        q(id) += value * (v(f, id) - fm.v(f, id))
+                    }
+
+                    fm.v(f, id) = v(f, id)
+
                 }
 
-                fm.v(f, id) = v(f, id)
             }
 
         }
@@ -59,18 +67,26 @@ class ALS protected () extends FMLearn {
         fm
     }
 
-    protected def asMap(rdd: RDD[Double]): Map[Long, Double] = {
-        Map[Long, Double](rdd.zipWithIndex.map(_.swap).collectAsMap.toSeq: _*)
+/*
+    override def learn(fm: FMModel, dataset: RelationalData): FMModel = {
+
+        fm
+    }
+*/
+
+    protected def asMap(rdd: RDD[(Int, Double)]): Map[Int, Double] = {
+        Map[Int, Double](rdd.collectAsMap.toSeq: _*)
     }
 
     protected def precomputeTermE(fm: FMModel, dataset: DataSet): RDD[Double] = {
         dataset.rdd.mapValues(fm.predict).map(r => r._2 - r._1)
     }
 
-    protected def precomputeTermQ(fm: FMModel, dataset: DataSet, f: Int): RDD[Double] = {
-        val dimension = dataset.dimension
-        dataset.inputs.map { input =>
-            input.activeIterator.filter(_._1 < dimension).map(pair => fm.v(f, pair._1) * pair._2).reduce(_+_)
+    protected def precomputeTermQ(fm: FMModel, dataset: DataSet, f: Int): RDD[(Int, Double)] = {
+        dataset.transposeInput.map { case (id, features) =>
+            val sum = features.activeIterator.map(pair => fm.v(f, id) * pair._2).reduce(_+_)
+
+            (id, sum)
         }
     }
 
@@ -80,7 +96,7 @@ class ALS protected () extends FMLearn {
         val isThetaUpdatable = isUpdatable(theta_new, theta)
 
         if (isThetaUpdatable) {
-            updateError(theta - theta_new, h)
+            updateError(theta_new - theta , h)
         }
 
         if (isThetaUpdatable) {
@@ -96,8 +112,8 @@ class ALS protected () extends FMLearn {
         var sum_e_h: Double = 0
 
         if (h.used > 0) {
-            sum_h_sqr = h.activeIterator.map(pair => pair._2 * pair._2).reduce(_+_)
-            sum_e_h = h.activeIterator.map(pair => e(pair._1) * pair._2).reduce(_+_)
+            sum_h_sqr = h.activeIterator.map(pair => pair._2 * pair._2).reduce(_ + _)
+            sum_e_h = h.activeIterator.map(pair => e(pair._1) * pair._2).reduce(_ + _)
         }
 
         (sum_h_sqr, sum_e_h)
@@ -109,7 +125,7 @@ class ALS protected () extends FMLearn {
 
     protected def updateError(thetaDiff: Double, h: SparseVector[Double]) {
         h.activeIterator.foreach { pair =>
-            e(pair._1) -= pair._2 * thetaDiff
+            e(pair._1) += pair._2 * thetaDiff
         }
     }
 

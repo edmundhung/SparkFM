@@ -26,7 +26,7 @@ class DataCollection protected (
 
 object DataCollection {
 
-    def byRandomSplit(
+    def splitByRandom(
         rawData: RDD[(Double, SparseVector[Double])],
         trainWeight: Double,
         testWeight: Double,

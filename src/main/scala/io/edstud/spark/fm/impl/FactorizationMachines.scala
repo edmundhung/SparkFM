@@ -7,13 +7,13 @@ import io.edstud.spark.fm.bs._
 import io.edstud.spark.Task._
 
 class FactorizationMachines (
-    val dataset: DataSet,
-    val numFactor: Int = 8,
-    val task: Task = Regression,
-    val maxIteration: Int = 100,
-    val timeout: Int = 0) extends FM {
+    protected var dataset: DataSet,
+    protected val numFactor: Int = 8,
+    protected val task: Task = Regression,
+    protected val maxIteration: Int = 100,
+    protected val timeout: Int = 0) extends FM {
 
-    var relations: List[Relation] = List[Relation]()
+    protected var relations: List[Relation] = List[Relation]()
 
     def withRelation(relation: Relation): this.type = {
         relations = relations :+ relation
@@ -21,33 +21,33 @@ class FactorizationMachines (
         this
     }
 
+    def withRelation(relationSet: List[Relation]): this.type = {
+        relations = relations ::: relationSet
+
+        this
+    }
+
     def learnWith(fml: FMLearn): FMModel = {
 
-        dataset.cache()
+        if (!relations.isEmpty) {
+            dataset = RelationalData(dataset.rdd, relations)
+        }
 
-        logInfo("Initializing Metadata...")
-        val meta = initMetadata()
+        dataset.cache()
 
         logInfo("Initializing FM Model...")
         var fm = new FMModel(dataset.dimension, numFactor)
 
         logInfo("Starting Learning Process...")
         for (i <- 1 to maxIteration) {
+            fm.computeRMSE(dataset)
             logInfo("Iteration " + i + " in progress...")
-            fm = fml.learn(fm, dataset, meta)
+            fm = fml.learn(fm, dataset)
         }
 
         dataset.unpersist()
 
         fm
-    }
-
-    private def initMetadata(): Metadata = {
-        val numRelations = relations.size
-        val numAttrGroups = if (numRelations > 0) relations.map(relation => relation.meta.numAttrGroups).reduce(_+_) else 0
-        val meta = new Metadata(numRelations, numAttrGroups, dataset.size)
-
-        meta
     }
 
 

@@ -1,10 +1,19 @@
 package io.edstud.spark.fm.bs
 
 import org.apache.spark.rdd.RDD
-import breeze.linalg.DenseVector
-import io.edstud.spark.DataSet
+import breeze.linalg.SparseVector
+import io.edstud.spark.fm.bs._
+import io.edstud.spark.Features
 
-class Relation (val data: DataSet, val meta: Metadata = null) {
-    val mapping: DenseVector[Int] = DenseVector.zeros[Int](data.size)
-    val attributeOffset: Int = 0
+class Relation (features: RDD[SparseVector[Double]]) extends Features(features) {
+
+    var isTemporary: Boolean = false;
+    val meta: Metadata = new Metadata(dimension)
+
+    def setTemporary(): this.type = {
+        isTemporary = true
+
+        this
+    }
+
 }
