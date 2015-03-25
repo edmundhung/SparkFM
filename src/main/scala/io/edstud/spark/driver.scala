@@ -13,19 +13,19 @@ object Application extends Logging  {
         val sc = new SparkContext(conf)
         val rawData = FMUtils.loadLibFMFile(sc, path)
 
-        val collection = DataCollection.byRandomSplit(
+        val collection = DataCollection.splitByRandom(
             rawData = rawData,
-            trainWeight = 0.95,
-            testWeight = 0.05
+            trainWeight = 0.8,
+            testWeight = 0.2
         )
 
         val model = FM(
             dataset = collection.trainingSet,
-            numFactor = 8,
+            numFactor = 100,
             maxIteration = 10
         ).learnWith(ALS.run)
 
-        val (rmse, mae) = model.evaluateRegression(collection.testSet)
+        val rmse = model.computeRMSE(collection.testSet)
 
         sc.stop
 

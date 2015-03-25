@@ -26,7 +26,7 @@ class DataCollection protected (
 
 object DataCollection {
 
-    def byRandomSplit(
+    def splitByRandom(
         rawData: RDD[(Double, SparseVector[Double])],
         trainWeight: Double,
         testWeight: Double,
@@ -36,14 +36,14 @@ object DataCollection {
             throw new Exception("Both TrainingSet and TestSet are required")
         }
 
-        val weights = Array(trainWeight, testWeight)
-        if (validateWeight > 0) weights :+ validateWeight
+        var weights = Array(trainWeight, testWeight)
+        if (validateWeight > 0) weights = weights :+ validateWeight
 
         val data = rawData.randomSplit(weights)
         val collection = new DataCollection(
-            if (trainWeight > 0) DataSet("TrainingSet", data(0)) else DataSet.empty("TrainingSet"),
-            if (testWeight > 0) DataSet("TestSet", data(1)) else DataSet.empty("TestSet"),
-            if (validateWeight > 0) DataSet("ValidationSet", data(2)) else DataSet.empty("ValidationSet"),
+            DataSet("TrainingSet", data(0)),
+            DataSet("TestSet", data(1)),
+            DataSet("ValidationSet", if (validateWeight > 0) data(2) else rawData.sparkContext.emptyRDD),
             DataSet.dimension(rawData)
         )
 
