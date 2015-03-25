@@ -37,18 +37,6 @@ class Features(protected val features: RDD[SparseVector[Double]]) extends Loggin
         }.setName("%s.transpose".format(rdd.name))
     }
 
-    def cache(): Features = {
-        if (!isEmpty) features.cache()
-
-        this
-    }
-
-    def unpersist(): Features = {
-        if (!isEmpty) features.unpersist()
-
-        this
-    }
-
 }
 
 class DataSet(val rdd: RDD[(Double, SparseVector[Double])]) extends Features(rdd.map(_._2)) {
@@ -59,13 +47,13 @@ class DataSet(val rdd: RDD[(Double, SparseVector[Double])]) extends Features(rdd
 
     lazy val transposeInput = transpose
 
-    override def cache(): DataSet = {
+    def cache(): this.type = {
         if (!isEmpty) rdd.cache()
 
         this
     }
 
-    override def unpersist(): DataSet = {
+    def unpersist(): this.type = {
         if (!isEmpty) rdd.unpersist()
 
         this

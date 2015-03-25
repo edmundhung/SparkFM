@@ -23,20 +23,6 @@ class RelationalData (
         }
     }
 
-    override def cache(): RelationalData = {
-        super.cache()
-        relations.foreach(_.cache)
-
-        this
-    }
-
-    override def unpersist(): RelationalData = {
-        super.unpersist()
-        relations.foreach(_.unpersist)
-
-        this
-    }
-
     private def initMetadata(): Metadata = {
         val numAttrGroups = relationSet.map(_.meta.numAttrGroups).reduce(_+_)
         //val numAttrPerGroup = relationSet.flatMap(_.meta.attrGroup)
@@ -64,7 +50,7 @@ object RelationalData {
 
             for (id <- 0 until additionalFeatures) {
                 val features = rdd.map(data => SparseVector.fill(1)(data._2.valueAt(relationSize + id)))
-                val relation = new Relation(features).setTemporary()
+                val relation = new Relation(features, relationSize + id).setTemporary()
                 additionalRelations = additionalRelations :+ relation
             }
 
