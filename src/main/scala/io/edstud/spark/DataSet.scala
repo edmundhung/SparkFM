@@ -45,7 +45,7 @@ class DataSet(val rdd: RDD[(Double, SparseVector[Double])]) extends Features(rdd
 
     val targets = rdd.map(_._1).setName("%s.targets".format(rdd.name))
 
-    lazy val transposeInput = transpose
+    lazy val transposeInput = transpose.cache
 
     def cache(): this.type = {
         if (!isEmpty) rdd.cache()
