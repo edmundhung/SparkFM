@@ -12,7 +12,8 @@ object FMUtils {
     def registerKryoClasses(conf: SparkConf) {
         conf.registerKryoClasses(Array(
                 classOf[FMModel],
-                classOf[FMLearn]
+                classOf[FMLearn],
+                classOf[util.DataNode]
             )
         )
     }
@@ -52,16 +53,22 @@ object FMUtils {
     def loadLibFMFile(sc: SparkContext, path: String, numFeatures: Int): RDD[(Double, SparseVector[Double])] = loadLibFMFile(sc, path, numFeatures, sc.defaultMinPartitions)
     def loadLibFMFile(sc: SparkContext, path: String): RDD[(Double, SparseVector[Double])] = loadLibFMFile(sc, path, -1)
 
-    def saveAsLibSVMFile(data: RDD[(Double, SparseVector[Double])], dir: String) {
+    def saveAsLibFMFile(data: RDD[(Double, SparseVector[Double])], dir: String) {
         val dataStr = data.map { case (target, features) =>
-            val sb = new StringBuilder(target.toString)
+            val sb = new StringBuilder(minimizeString(target))
             features.activeIterator.foreach { case (i, v) =>
                 sb += ' '
-                sb ++= s"${i + 1}:$v"
+                sb ++= "%d:%s".format(i + 1, minimizeString(v)) //s"${i + 1}:$v"
             }
+
             sb.mkString
         }
         dataStr.saveAsTextFile(dir)
+    }
+
+    private def minimizeString(v: Double): String = {
+        val minimized = if (v == Math.floor(v) && !v.isInfinite) "#" else "#.###"
+        new java.text.DecimalFormat(minimized).format(v)
     }
 
 }
