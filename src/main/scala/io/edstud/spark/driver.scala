@@ -17,43 +17,85 @@ object Application extends Logging  {
         val conf = Inertia.initializeSparkConf(masterUrl)
         val sc = new SparkContext(conf)
 
-        //testVectorizor(sc)
+        //StandardVectorizor(sc)
+        //RelationVectorizor(sc)
+
         val rmse = testALS(sc)
 
         sc.stop
 
     }
 
-    private def testVectorizor(sc: SparkContext) {
+    private def RelationVectorizor(sc: SparkContext) {
+
+        val userFile = sc.textFile("%s/users.dat".format(directory)).map(_.split("::"))
+        val movieFile = sc.textFile("%s/movies.dat".format(directory)).map(_.split("::"))
+        val ratingfile = sc.textFile("%s/ratings.dat".format(directory)).map(_.split("::"))
+
+        val rawData = new RelationVectorizor()
+                            .addRelation(userFile, Map(
+                                0 -> DataNode.Target,
+                                1 -> DataNode.Identity,
+                                2 -> DataNode.Number,
+                                3 -> DataNode.Identity,
+                                4 -> DataNode.Identity
+                            ), 0)
+                            .addRelation(movieFile, Map(
+                                0 -> DataNode.Target,
+                                1 -> DataNode.Identity,
+                                2 -> DataNode.List.withSeperator("|")
+                            ), 1)
+                            .transform(ratingfile, Map(
+                                0 -> DataNode.Identity,
+                                1 -> DataNode.Identity,
+                                2 -> DataNode.Target,
+                                3 -> DataNode.Time
+                            ))
+
+        FMUtils.saveAsLibFMFile(rawData, "%s/libfm".format(directory))
+    }
+
+    private def StandardVectorizor(sc: SparkContext) {
         val rawfile = sc.textFile("%s/ratings.dat".format(directory)).map(_.split("::"))
         val definitions: Map[Int, DataNode] = Map(
             0 -> DataNode.Identity,
             1 -> DataNode.Identity,
             2 -> DataNode.Target,
-            3 -> DataNode.Number
+            3 -> DataNode.Time
         )
 
         val vectorizor = new StandardVectorizor()
-        val resultRDD = vectorizor.transform(rawfile, definitions)
+        val rawData = vectorizor.transform(rawfile, definitions).cache
 
-        logInfo("Vectorisation Completed")
-
-        FMUtils.saveAsLibFMFile(resultRDD, "%s/libfm".format(directory))
+        FMUtils.saveAsLibFMFile(rawData, "%s/libfm".format(directory))
     }
 
     private def testALS(sc: SparkContext): Double = {
-        //val rawData = FMUtils.loadLibFMFile(sc, "%s/ratings.dat.libfm".format(directory))
+        val userFile = sc.textFile("%s/users.dat".format(directory)).map(_.split("::"))
+        val movieFile = sc.textFile("%s/movies.dat".format(directory)).map(_.split("::"))
+        val ratingfile = sc.textFile("%s/ratings.dat".format(directory)).map(_.split("::"))
 
-        val rawfile = sc.textFile("%s/ratings.dat".format(directory)).map(_.split("::"))
-        val definitions: Map[Int, DataNode] = Map(
-            0 -> DataNode.Identity,
-            1 -> DataNode.Identity,
-            2 -> DataNode.Target,
-            3 -> DataNode.Number
-        )
-
-        val vectorizor = new StandardVectorizor()
-        val rawData = vectorizor.transform(rawfile, definitions)
+        val rawData = new RelationVectorizor()
+                            .addRelation(userFile, Map(
+                                0 -> DataNode.Target,
+                                1 -> DataNode.Identity,
+                                2 -> DataNode.Number,
+                                3 -> DataNode.Identity,
+                                4 -> DataNode.Identity
+                            ), 0)
+                            /*
+                            .addRelation(movieFile, Map(
+                                0 -> DataNode.Target,
+                                1 -> DataNode.Identity,
+                                2 -> DataNode.List.withSeperator("|")
+                            ), 1)
+                            */
+                            .transform(ratingfile, Map(
+                                0 -> DataNode.Identity,
+                                1 -> DataNode.Identity,
+                                2 -> DataNode.Target,
+                                3 -> DataNode.Time
+                            ))
 
         val collection = DataCollection.splitByRandom(
             rawData = rawData,
@@ -63,15 +105,14 @@ object Application extends Logging  {
 
         val model = FM(
             dataset = collection.trainingSet,
-            numFactor = 6,
+            numFactor = 2,
             maxIteration = 3
         ).learnWith(ALS.run)
 
         model.computeRMSE(collection.testSet)
     }
 
-    private def directory = "/home/edmund/Workspace/FYP/Dataset/MovieLens/ml-1m"
-
+    private val directory = "/home/edmund/Workspace/FYP/Dataset/MovieLens/ml-1m"
 
 }
 

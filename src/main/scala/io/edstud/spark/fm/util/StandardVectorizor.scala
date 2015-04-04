@@ -6,12 +6,9 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.SparkContext._
 import breeze.linalg.SparseVector
 
-class StandardVectorizor() extends Logging {
+class StandardVectorizor() extends Logging with Serializable {
 
     protected def identify(raw: RDD[Array[String]], definition: Map[Int, DataNode]): (RDD[String], RDD[Array[String]]) = {
-
-        logInfo("Identifying Data Structure...")
-
         val dataset = raw.filter(features => features.size == definition.size).cache()
 
         val targets = dataset.map {
@@ -27,61 +24,60 @@ class StandardVectorizor() extends Logging {
     }
 
     protected def analyzeFeatures(inputs: RDD[Array[String]], definition: Map[Int, DataNode]): Map[Int, DataNode] = {
+        definition.values.filter(!_.isTarget).zipWithIndex.map(_.swap).toMap.map { case (index, node) =>
+            val stat = if (node.isIdentity || node.isList) {
+                val feature = if (node.isList) {
+                    inputs.flatMap(features => features(index).split(node.getSeperator))
+                } else {
+                    inputs.map(features => features(index))
+                }
 
-        logInfo("Analyzing features distribution...")
-
-        var stats = definition.map { case (index, node) =>
-
-            /* TODO - node.isList */
-
-            val statNode = if (node.isIdentity) {
-                val feature = inputs.groupBy(features => features(index)).map(_._1).cache()
-
-                val featureMap = feature.zipWithIndex.collectAsMap
-                val dimension = feature.count
+                val featureIds = feature.distinct.cache
+                val featureIndexer = featureIds.zipWithIndex.collectAsMap
+                val dimension = featureIds.count
 
                 feature.unpersist()
 
-                node.withTransform(featureMap).withDimension(dimension)
+                node.withIndexer(featureIndexer).withDimension(dimension)
             } else {
-                /* if (node.isNumber) */
                 node.withDimension(1)
             }
 
-            (index, statNode)
+            (index, stat)
         }
-
-        stats
     }
 
-    protected def preprocess(inputs: RDD[Array[String]], stats: Map[Int, DataNode]): RDD[Array[((Long, Long), Long)]] = {
-
-        logInfo("Preprocessing transformation...")
-
+    protected def preprocess(inputs: RDD[Array[String]], nodes: Map[Int, DataNode]): RDD[Array[SparseVector[Double]]] = {
         inputs.map { features =>
-            features.zipWithIndex.map { case (feature, index) =>
-                val node = stats(index)
-
-                (node.process(feature), node.getDimension)
+            features.zipWithIndex.map {
+                case (feature, index) => nodes(index).preprocess(feature)
             }
         }
     }
 
+    protected def computeDimension(nodes: Map[Int, DataNode]): Int = {
+        nodes.map(_._2.getDimension).reduce(_ + _).toInt
+    }
+
     def transform(raw: RDD[Array[String]], definition: Map[Int, DataNode]): RDD[(Double, SparseVector[Double])] = {
+        logInfo("Identifying Data Structure...")
         val (targets, inputs) = identify(raw, definition)
+
+        logInfo("Analyzing features distribution...")
         val stats = analyzeFeatures(inputs, definition)
-        val transform = preprocess(inputs, stats)
+
+        logInfo("Preprocessing transformation...")
+        val transformed = preprocess(inputs, stats)
 
         logInfo("Transformation in progress...")
-
-        val dimension = stats.map(_._2.getDimension).reduce(_ + _)
-        val featureVectors = transform.map { featureStats =>
-            val f = SparseVector.zeros[Double](dimension.toInt)
+        val dimension = computeDimension(stats)
+        val featureVectors = transformed.map { array =>
+            val f = SparseVector.zeros[Double](dimension)
 
             var offset = 0
-            featureStats.foreach { case ((index, value), featureDimension) =>
-                f.update(index.toInt + offset, value)
-                offset += featureDimension.toInt
+            array.foreach { features =>
+                features.activeIterator.foreach(pair => f.update(pair._1 + offset, pair._2))
+                offset += features.size
             }
 
             f
