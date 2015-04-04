@@ -17,7 +17,7 @@ class ALS protected () extends FMLearn {
         var error = precomputeTermE(fm, dataset)
 
         if (fm.k0) {
-            logDebug("Start learning w0")
+            logInfo("Start learning w0")
             val w0 = drawGlobalBias(fm.w0, fm.reg0, dataset.size, error)
 
             if (isUpdatable(w0, fm.w0)) {
@@ -34,7 +34,7 @@ class ALS protected () extends FMLearn {
         val features = dataset.transposeInput.collectAsMap
 
         if (fm.k1) {
-            logDebug("Start learning W")
+            logInfo("Start learning W")
             for (id <- 0 until fm.num_attribute) {
                 if (features.contains(id)) {
                     fm.w(id) = drawTheta(fm.w(id), fm.regw, features(id))
@@ -42,7 +42,7 @@ class ALS protected () extends FMLearn {
             }
         }
 
-        logDebug("Start learning V")
+        logInfo("Start learning V")
         val v = fm.v.copy
         for (f <- 0 until fm.num_factor) {
 
@@ -68,6 +68,8 @@ class ALS protected () extends FMLearn {
             }
 
         }
+
+        logInfo("Finish")
 
         fm
     }
