@@ -1,6 +1,7 @@
 package io.edstud.spark.fm.impl
 
 import scala.collection.immutable.List
+import org.apache.spark.storage.StorageLevel
 import io.edstud.spark.DataSet
 import io.edstud.spark.fm._
 import io.edstud.spark.fm.bs._
@@ -33,7 +34,7 @@ class FactorizationMachines (
             dataset = RelationalData(dataset.rdd, relations)
         }
 
-        dataset.cache()
+        dataset.persist(StorageLevel.MEMORY_AND_DISK_SER)
 
         logInfo("Initializing FM Model...")
         var fm = new FMModel(dataset.dimension, numFactor)

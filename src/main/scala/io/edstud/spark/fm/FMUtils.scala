@@ -69,7 +69,7 @@ object FMUtils {
     }
 
     private def minimizeString(v: Double): String = {
-        val minimized = if (v == Math.floor(v) && !v.isInfinite) "#" else "#.###"
+        val minimized = if (v.isValidInt) "#" else "#.###"
         new java.text.DecimalFormat(minimized).format(v)
     }
 

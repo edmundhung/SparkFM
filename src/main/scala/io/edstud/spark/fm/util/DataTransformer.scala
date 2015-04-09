@@ -9,6 +9,6 @@ object BypassData extends DataTransformer {
     def transform(feature: String): Double = feature.toDouble
 }
 
-object TimeStampToDays extends DataTransformer {
-    def transform(feature: String): Double = feature.toLong / (60 * 60 * 24)
+object TimeStampToMonths extends DataTransformer {
+    def transform(feature: String): Double = feature.toLong / (60 * 60 * 24 * 7 * 30)
 }

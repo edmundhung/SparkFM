@@ -53,6 +53,12 @@ class DataSet(val rdd: RDD[(Double, SparseVector[Double])]) extends Features(rdd
         this
     }
 
+    def persist(level: StorageLevel): this.type = {
+        if (!isEmpty) rdd.persist(level)
+
+        this
+    }
+
     def unpersist(): this.type = {
         if (!isEmpty) rdd.unpersist()
 

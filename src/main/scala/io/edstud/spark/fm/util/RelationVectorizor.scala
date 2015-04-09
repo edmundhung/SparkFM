@@ -32,17 +32,22 @@ class RelationVectorizor() extends StandardVectorizor {
         inputs.map { features =>
             features.zipWithIndex.flatMap {
                 case (feature, index) =>
-                    if (relations.contains(index) && relations(index).contains(feature)) {
-                        relations(index)(feature)
-                    } else {
-                        Array(nodes(index).preprocess(feature))
+                    var features = Array[SparseVector[Double]]() :+ nodes(index).preprocess(feature)
+
+                    if (relations.contains(index)) {
+                        if (relations(index).contains(feature))
+                            features = features ++ relations(index)(feature) // Append relation vector
+                        else
+                            features = Array[SparseVector[Double]]() // No mapping exists, filter it
                     }
+
+                    features
             }
         }
     }
 
     override protected def computeDimension(nodes: Map[Int, DataNode]): Int = {
-        super.computeDimension(nodes) + dimensions - relations.size
+        super.computeDimension(nodes) + dimensions// - relations.size
     }
 
 }

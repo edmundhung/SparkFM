@@ -12,7 +12,24 @@ class DataNode protected (nodeType: Int) extends Logging with Serializable {
     val isIdentity: Boolean = (nodeType == DataNode.IDENTITY)
     val isList: Boolean = (nodeType == DataNode.LIST)
     val isNumber: Boolean = (nodeType == DataNode.NUMBER)
-    val isTarget: Boolean = (nodeType == DataNode.TARGET)
+
+    def isTarget: Boolean = isTargetNode
+    def isInput: Boolean = isInputNode
+
+    private var isInputNode: Boolean = true
+    private var isTargetNode: Boolean = false
+
+    def withIsInput(isInputNode: Boolean): this.type = {
+        this.isInputNode = isInputNode
+
+        this
+    }
+
+    def withIsTarget(isTargetNode: Boolean): this.type = {
+        this.isTargetNode = isTargetNode
+
+        this
+    }
 
     def preprocess(feature: String): SparseVector[Double] = {
         val vector = SparseVector.zeros[Double](this.dimension.toInt)
@@ -101,7 +118,6 @@ object DataNode {
     private val IDENTITY = 1
     private val LIST = 2
     private val NUMBER = 3
-    private val TARGET = 4
 
     def Identity(): DataNode = {
         new DataNode(IDENTITY)
@@ -116,11 +132,15 @@ object DataNode {
     }
 
     def Target(): DataNode = {
-        new DataNode(TARGET).withTransformer(BypassData)
+        DataNode.Number.withIsTarget(true).withIsInput(false)
+    }
+
+    def Bypass(): DataNode = {
+        DataNode.Number.withIsInput(false)
     }
 
     def Time(): DataNode = {
-        DataNode.Number.withTransformer(TimeStampToDays)
+        DataNode.Number.withTransformer(TimeStampToMonths)
     }
 
 }

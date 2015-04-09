@@ -3,19 +3,20 @@ package io.edstud.spark.fm.util
 import scala.collection.Map
 import org.apache.spark.Logging
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
 import org.apache.spark.SparkContext._
 import breeze.linalg.SparseVector
 
 class StandardVectorizor() extends Logging with Serializable {
 
     protected def identify(raw: RDD[Array[String]], definition: Map[Int, DataNode]): (RDD[String], RDD[Array[String]]) = {
-        val dataset = raw.filter(features => features.size == definition.size).cache()
+        val dataset = raw.map(features => features.map(_.trim)).filter(features => features.filter(_.size > 0).size == definition.size).persist(StorageLevel.MEMORY_ONLY_SER)
 
         val targets = dataset.map {
             features => features.zipWithIndex.filter(f => definition(f._2).isTarget).map(_._1).head
         }
         val inputs = dataset.map {
-            features => features.zipWithIndex.filter(f => !definition(f._2).isTarget).map(_._1)
+            features => features.zipWithIndex.filter(f => definition(f._2).isInput).map(_._1)
         }
 
         dataset.unpersist()
@@ -24,7 +25,7 @@ class StandardVectorizor() extends Logging with Serializable {
     }
 
     protected def analyzeFeatures(inputs: RDD[Array[String]], definition: Map[Int, DataNode]): Map[Int, DataNode] = {
-        definition.values.filter(!_.isTarget).zipWithIndex.map(_.swap).toMap.map { case (index, node) =>
+        definition.values.filter(_.isInput).zipWithIndex.map(_.swap).toMap.map { case (index, node) =>
             val stat = if (node.isIdentity || node.isList) {
                 val feature = if (node.isList) {
                     inputs.flatMap(features => features(index).split(node.getSeperator))
@@ -32,11 +33,11 @@ class StandardVectorizor() extends Logging with Serializable {
                     inputs.map(features => features(index))
                 }
 
-                val featureIds = feature.distinct.cache
+                val featureIds = feature.distinct.persist(StorageLevel.MEMORY_ONLY_SER)
                 val featureIndexer = featureIds.zipWithIndex.collectAsMap
                 val dimension = featureIds.count
 
-                feature.unpersist()
+                featureIds.unpersist()
 
                 node.withIndexer(featureIndexer).withDimension(dimension)
             } else {
@@ -56,7 +57,7 @@ class StandardVectorizor() extends Logging with Serializable {
     }
 
     protected def computeDimension(nodes: Map[Int, DataNode]): Int = {
-        nodes.map(_._2.getDimension).reduce(_ + _).toInt
+        nodes.filter(_._2.isInput).map(_._2.getDimension).reduce(_ + _).toInt
     }
 
     def transform(raw: RDD[Array[String]], definition: Map[Int, DataNode]): RDD[(Double, SparseVector[Double])] = {
@@ -71,8 +72,11 @@ class StandardVectorizor() extends Logging with Serializable {
 
         logInfo("Transformation in progress...")
         val dimension = computeDimension(stats)
+
+        logInfo("Final Dimension: " + dimension)
+
         val featureVectors = transformed.map { array =>
-            val f = SparseVector.zeros[Double](dimension)
+            val f = SparseVector.zeros[Double](dimension + 1)
 
             var offset = 0
             array.foreach { features =>
