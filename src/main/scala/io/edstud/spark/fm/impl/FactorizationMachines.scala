@@ -34,9 +34,10 @@ class FactorizationMachines (
             dataset = RelationalData(dataset.rdd, relations)
         }
 
-        dataset.persist(StorageLevel.MEMORY_AND_DISK_SER)
+        //dataset.persist(StorageLevel.MEMORY_AND_DISK_SER)
+        dataset.cache
 
-        logInfo("Initializing FM Model...")
+        logDebug("Initializing FM Model...")
         var fm = new FMModel(dataset.dimension, numFactor)
 
         logInfo("Starting Learning Process...")

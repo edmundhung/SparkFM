@@ -16,7 +16,7 @@ class RelationVectorizor() extends StandardVectorizor {
 
     def addRelation(relation: RDD[Array[String]], definition: Map[Int, DataNode], mapping: Int): this.type = {
 
-        logInfo("Processing new relation...")
+        logDebug("Processing new relation...")
 
         val (targets, inputs) = identify(relation, definition)
         val stats = super.analyzeFeatures(inputs, definition)

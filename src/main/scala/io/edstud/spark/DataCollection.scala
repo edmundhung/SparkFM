@@ -26,8 +26,21 @@ class DataCollection protected (
 
 object DataCollection {
 
+    def apply(
+        trainingRDD: RDD[(Double, SparseVector[Double])],
+        testingRDD: RDD[(Double, SparseVector[Double])],
+        validationRDD: RDD[(Double, SparseVector[Double])]): DataCollection = {
+
+        new DataCollection(
+            trainingSet = DataSet("TrainingSet", trainingRDD),
+            testSet = DataSet("TestSet", testingRDD),
+            validationSet = DataSet("ValidationSet", validationRDD)
+        )
+    }
+
     def splitByRandom(
         rawData: RDD[(Double, SparseVector[Double])],
+        seed: Long,
         trainWeight: Double,
         testWeight: Double,
         validateWeight: Double = 0.0): DataCollection = {
@@ -39,7 +52,7 @@ object DataCollection {
         var weights = Array(trainWeight, testWeight)
         if (validateWeight > 0) weights = weights :+ validateWeight
 
-        val data = rawData.randomSplit(weights)
+        val data = rawData.randomSplit(weights, seed)
         val collection = new DataCollection(
             DataSet("TrainingSet", data(0)),
             DataSet("TestSet", data(1)),
@@ -49,5 +62,13 @@ object DataCollection {
 
         collection
     }
+
+    /*
+    def splitChronologically(
+        rawData: RDD[(Double, SparseVector[Double])],
+        ): DataCollection = {
+
+    }
+    */
 
 }

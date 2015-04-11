@@ -32,12 +32,16 @@ class DataNode protected (nodeType: Int) extends Logging with Serializable {
     }
 
     def preprocess(feature: String): SparseVector[Double] = {
-        val vector = SparseVector.zeros[Double](this.dimension.toInt)
+        val vector = SparseVector.zeros[Double](this.getDimension().toInt)
 
         if (isList) {
             val features = feature.split(this.getSeperator)
             index(features).zip(transform(features)).foreach {
                 case (index, value) => vector.update(index, value)
+            }
+        } else if (transformers.size > 1) {
+            transformers.map(_.transform(feature)).zipWithIndex.foreach {
+                case (value, index) => vector.update(index, value)
             }
         } else {
             vector.update(index(feature), transform(feature))
@@ -55,26 +59,39 @@ class DataNode protected (nodeType: Int) extends Logging with Serializable {
         case _ => 0
     }
 
-    private def transform(features: Array[String]): Array[Double] = transformer match {
-        case Some(transformer) =>
-            transformer.transform(features)
-        case _ =>
-            distribution(features)
+    private def transform(features: Array[String]): Array[Double] = getTransfomer() match {
+        case Some(transformer) => transformer.transform(features)
+        case _ => distribution(features)
     }
 
     private def distribution(features: Array[String]): Array[Double] = {
-        Array.fill[Double](features.size)(1.0 / features.size)
+        Array.fill[Double](features.size)(1.0d / features.size)
     }
 
-    private def transform(feature: String): Double = transformer match {
+    private def transform(feature: String): Double = getTransfomer() match {
         case Some(transformer) => transformer.transform(feature)
-        case _ => 1
+        case _ => if (isIdentity) {
+            1
+        } else {
+            feature.toDouble
+        }
+    }
+
+    private def getTransfomer(): Option[DataTransformer] = {
+        if (transformers.size > 0) {
+            Some(transformers(0))
+        } else {
+            None
+        }
     }
 
     private var dimension: Long = 0
 
     def getDimension(): Long = {
-        this.dimension
+        if (transformers.size > 1)
+            (this.dimension - 1) + transformers.size
+        else
+            this.dimension
     }
 
     def withDimension(dimension: Long): this.type = {
@@ -103,10 +120,10 @@ class DataNode protected (nodeType: Int) extends Logging with Serializable {
         this
     }
 
-    private var transformer: Option[DataTransformer] = None
+    private var transformers: Array[DataTransformer] = Array[DataTransformer]()
 
     def withTransformer(transformer: DataTransformer): this.type = {
-        this.transformer = Some(transformer)
+        transformers = transformers:+ transformer
 
         this
     }
@@ -128,7 +145,7 @@ object DataNode {
     }
 
     def Number(): DataNode = {
-        new DataNode(NUMBER).withTransformer(BypassData)
+        new DataNode(NUMBER)
     }
 
     def Target(): DataNode = {
@@ -137,10 +154,6 @@ object DataNode {
 
     def Bypass(): DataNode = {
         DataNode.Number.withIsInput(false)
-    }
-
-    def Time(): DataNode = {
-        DataNode.Number.withTransformer(TimeStampToMonths)
     }
 
 }

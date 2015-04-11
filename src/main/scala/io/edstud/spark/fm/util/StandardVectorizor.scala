@@ -59,18 +59,17 @@ class StandardVectorizor() extends Logging with Serializable {
     protected def computeDimension(nodes: Map[Int, DataNode]): Int = {
         nodes.filter(_._2.isInput).map(_._2.getDimension).reduce(_ + _).toInt
     }
-
     def transform(raw: RDD[Array[String]], definition: Map[Int, DataNode]): RDD[(Double, SparseVector[Double])] = {
-        logInfo("Identifying Data Structure...")
+        logDebug("Identifying Data Structure...")
         val (targets, inputs) = identify(raw, definition)
 
-        logInfo("Analyzing features distribution...")
+        logDebug("Analyzing features distribution...")
         val stats = analyzeFeatures(inputs, definition)
 
-        logInfo("Preprocessing transformation...")
+        logDebug("Preprocessing transformation...")
         val transformed = preprocess(inputs, stats)
 
-        logInfo("Transformation in progress...")
+        logDebug("Transformation in progress...")
         val dimension = computeDimension(stats)
 
         logInfo("Final Dimension: " + dimension)
@@ -80,7 +79,9 @@ class StandardVectorizor() extends Logging with Serializable {
 
             var offset = 0
             array.foreach { features =>
-                features.activeIterator.foreach(pair => f.update(pair._1 + offset, pair._2))
+                features.activeIterator.foreach { pair =>
+                    f.update(pair._1 + offset, pair._2)
+                }
                 offset += features.size
             }
 
