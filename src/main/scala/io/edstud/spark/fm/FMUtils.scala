@@ -12,10 +12,10 @@ object FMUtils {
     def registerKryoClasses(conf: SparkConf) {
         conf.registerKryoClasses(Array(
                 classOf[FMModel],
-                classOf[util.DataNode],
-                classOf[util.DataTransformer],
-                classOf[util.StandardVectorizor],
-                classOf[util.RelationVectorizor]
+                classOf[util.DataDomain],
+                classOf[util.DataPreprocessor],
+                classOf[util.StandardVectorizer],
+                classOf[util.RelationVectorizer]
             )
         )
     }

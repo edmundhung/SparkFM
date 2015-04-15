@@ -4,9 +4,7 @@ organization := "io.edstud.spark"
 
 version := "0.4.0"
 
-libraryDependencies += "org.apache.spark" % "spark-core_2.10" % "1.2.0" % "provided"
-
-libraryDependencies += "org.apache.spark"  % "spark-mllib_2.10" % "1.2.0"
+libraryDependencies += "org.apache.spark" %% "spark-core" % "1.3.0"
 
 libraryDependencies += "org.scalanlp" %% "breeze" % "0.10"
 
