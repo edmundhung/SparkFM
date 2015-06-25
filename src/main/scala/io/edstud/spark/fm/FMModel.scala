@@ -1,10 +1,15 @@
 package io.edstud.spark.fm
 
-import org.apache.spark.Logging
+import scala.collection.Map
+import org.apache.spark.{SparkContext, Logging}
+import org.apache.spark.SparkContext._
+import org.apache.spark.rdd.RDD
 import breeze.linalg.{SparseVector, DenseVector, DenseMatrix}
 import breeze.stats.distributions.Gaussian
+import com.github.nscala_time.time.Imports._
 import io.edstud.spark.fm.bs.Relation
 import io.edstud.spark.Model
+import io.edstud.spark.fm.util._
 
 class FMModel(
     val num_attribute: Int,
@@ -60,6 +65,24 @@ class FMModel(
         val sum_sqr_f = f.map(value => value * value).reduce(_+_)
 
         (sum_f, sum_sqr_f)
+    }
+
+    var vectorizer: Option[StandardVectorizer] = None
+
+    def withVectorizer(vectorizer: StandardVectorizer): this.type = {
+        this.vectorizer = Some(vectorizer)
+
+        this
+    }
+
+    def recommendBy(sc: SparkContext, name: String, params: Map[String, Any]): RDD[(String, Double)] = {
+        sc.parallelize(vectorizer.get.domains.filter(_.attributeName == name).head.getAllIndex).map {
+            index => (index, params ++ Map[String, Any](name -> index))
+        }.mapValues(vectorizer.get.fit).mapValues(this.predict)
+    }
+
+    def recommendItems(sc: SparkContext, params: Map[String, Any], top: Int): Array[(String, Double)] = {
+        this.recommendBy(sc, "ItemId", params).top(top)(Ordering.by(_._2))
     }
 
 

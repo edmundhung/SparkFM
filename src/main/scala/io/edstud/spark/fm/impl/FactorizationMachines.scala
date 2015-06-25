@@ -6,6 +6,7 @@ import io.edstud.spark.DataSet
 import io.edstud.spark.fm._
 import io.edstud.spark.fm.bs._
 import io.edstud.spark.Task._
+import io.edstud.spark.fm.util._
 
 class FactorizationMachines (
     protected var dataset: DataSet,
@@ -28,6 +29,14 @@ class FactorizationMachines (
         this
     }
 
+    protected var vectorizer: Option[StandardVectorizer] = None
+
+    def withVectorizer(vectorizer: StandardVectorizer): this.type = {
+        this.vectorizer = Some(vectorizer)
+
+        this
+    }
+
     def learnWith(fml: FMLearn): FMModel = {
 
         if (!relations.isEmpty) {
@@ -39,6 +48,10 @@ class FactorizationMachines (
 
         logDebug("Initializing FM Model...")
         var fm = new FMModel(dataset.dimension, numFactor)
+
+        if (this.vectorizer.isDefined) {
+            fm = fm.withVectorizer(this.vectorizer.get)
+        }
 
         logInfo("Starting Learning Process...")
         for (i <- 1 to maxIteration) {

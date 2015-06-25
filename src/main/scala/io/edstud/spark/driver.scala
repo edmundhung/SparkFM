@@ -1,5 +1,6 @@
 package io.edstud.spark
 
+import scala.util.Try
 import scala.collection.Map
 import org.apache.spark.{SparkConf, SparkContext, Logging}
 import org.apache.spark.SparkContext._
@@ -13,7 +14,7 @@ import io.edstud.spark.dbscan._
 import io.edstud.spark.baseline._
 import breeze.linalg.SparseVector
 
-object config {
+object FMConfig {
     val root: String = "../../Dataset" // "s3n://project-inertia/Dataset"
     val seed: Long = 52577450
     val masterUrl = "local[*]" // "yarn-client"
@@ -35,7 +36,7 @@ object Inertia {
             //.set("spark.rdd.compress", "true")
             //.set("spark.scheduler.mode", "FAIR")
 
-        //FMUtils.registerKryoClasses(conf)
+        FMUtils.registerKryoClasses(conf)
 
         conf
     }
@@ -46,7 +47,7 @@ object Application extends Logging  {
 
     def main (args: Array[String]) {
 
-        val masterUrl = config.masterUrl
+        val masterUrl = FMConfig.masterUrl
         logInfo("Using MasterUrl - %s".format(masterUrl))
 
         val conf = Inertia.initializeSparkConf(masterUrl)
@@ -68,7 +69,7 @@ object Application extends Logging  {
             if (data.contains("FS")) {
                 val setup = data.split("FS")(1).split(':')
                 val (eps, minPts) = (setup(0).toDouble, setup(1).toInt)
-                Foursquare.init(sc, eps, minPts)
+                Foursquare.init(sc, eps, minPts, step)
 
                 data = "FS"
             }
@@ -99,19 +100,35 @@ object Application extends Logging  {
                     }
                 }
 
-                /*
-                data match {
-                    case "FS" => FMUtils.saveAsLibFMFile(dataset, "%s/%s/libfm-%s".format(config.root, Foursquare.directory, step))
-                    case "ML" => FMUtils.saveAsLibFMFile(dataset, "%s/%s/libfm-%s".format(config.root, MovieLens.directory, step))
+                //FMUtils.saveAsLibFMFile(dataset, "%s/output/libfm".format(FMConfig.root))
+
+                val vectorizer = data match {
+                    case "FS" => Foursquare.vectorizer.get
+                    case "ML" => MovieLens.vectorizer.get
                 }
-                */
 
                 val collection = DataCollection.splitByRandom(dataset, seed, 0.6, 0.4)
 
                 logInfo("Training size = " + collection.trainingSet.size)
                 logInfo("Test size = " + collection.testSet.size)
 
-                runALS(collection, numFactor, maxIteration)
+                val model = FM(
+                    dataset = collection.trainingSet,
+                    numFactor = numFactor,
+                    maxIteration = maxIteration
+                ).withVectorizer(vectorizer).learnWith(ALS.run)
+
+                model.computeRMSE(collection.trainingSet)
+                model.computeRMSE(collection.testSet)
+
+                logInfo("Recommendations for UserId (%d)".format(1))
+                model.recommendItems(sc, Map[String, Any](
+                    "UserId" -> 1,
+                    "Time1" -> 998302268,
+                    "Time2" -> 998302268
+                ), 10).zipWithIndex.map { case ((itemId, rating), index) =>
+                    "Rank %d: Item %s".format(index + 1, itemId)
+                }.foreach(msg => logInfo(msg))
 
             }
 
@@ -129,23 +146,11 @@ object Application extends Logging  {
         Baseline.EntityMean(DataCollection.splitByRandom(item, seed, 0.6, 0.4), item)
     }
 
-    private def runALS(collection: DataCollection, numFactor: Int, maxIteration: Int): Double = {
-
-        val model = FM(
-            dataset = collection.trainingSet,
-            numFactor = numFactor,
-            maxIteration = maxIteration
-        ).learnWith(ALS.run)
-
-        model.computeRMSE(collection.trainingSet)
-        model.computeRMSE(collection.testSet)
-    }
-
 }
 
 object Foursquare extends Logging {
 
-    val directory = config.Foursquare
+    val directory = FMConfig.Foursquare
 
     var checkinsByUserVenuePair: Map[(Int, Int), String] = Map[(Int, Int), String]()
     var locationsByVenueId: Map[Int, (Double, Double)] = Map[Int, (Double, Double)]()
@@ -153,13 +158,17 @@ object Foursquare extends Logging {
 
     var dbscanModel: Option[DBSCANModel] = None
 
-    def init(sc: SparkContext, eps: Double, minPts: Int) {
+    var vectorizer: Option[StandardVectorizer] = None
 
-        logDebug("Materializing Venue Location Mapping")
-        this.locationsByVenueId = this.grouping(sc, "Venues")
+    def init(sc: SparkContext, eps: Double, minPts: Int, cat: Int = 2) {
 
-        logDebug("Materializing User Location Mapping")
-        this.locationsByUserId = this.grouping(sc, "Users")
+        if (cat == 2) {
+            logDebug("Materializing Venue Location Mapping")
+            this.locationsByVenueId = this.grouping(sc, "Venues")
+
+            logDebug("Materializing User Location Mapping")
+            this.locationsByUserId = this.grouping(sc, "Users")
+        }
 
         val checkins = this.dataFile(sc, "Checkins", 6).cache
 
@@ -168,20 +177,21 @@ object Foursquare extends Logging {
             ((items(1).toInt, items(2).toInt), items(5))
         }.collectAsMap
 
-
-        val checkinsByUserId = checkins.map {
-            items => (
-                items(1).toInt, (
-                    items(2).toInt,
-                    DateTime.parse(items(5), DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss"))
+        if (cat == 2) {
+            val checkinsByUserId = checkins.map {
+                items => (
+                    items(1).toInt, (
+                        items(2).toInt,
+                        DateTime.parse(items(5), DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss"))
+                    )
                 )
-            )
-        }.filter { case (userId, (venueId, datetime)) =>
-            locationsByUserId.contains(userId) && locationsByVenueId.contains(venueId)
-        }.groupByKey.mapValues(_.toArray)
+            }.filter { case (userId, (venueId, datetime)) =>
+                locationsByUserId.contains(userId) && locationsByVenueId.contains(venueId)
+            }.groupByKey.mapValues(_.toArray)
 
-        logDebug("Identifying Significant locations with DBSCAN")
-        this.dbscanModel = Some(DBSCAN.byWorkingArea(checkinsByUserId, locationsByVenueId).learnWith(eps, minPts))
+            logDebug("Identifying Significant locations with DBSCAN")
+            this.dbscanModel = Some(DBSCAN.byWorkingArea(checkinsByUserId, locationsByVenueId).learnWith(eps, minPts))
+        }
 
         logDebug("Initialization Completed")
     }
@@ -194,7 +204,7 @@ object Foursquare extends Logging {
 
     def dataFile(sc: SparkContext, name: String, size: Int): RDD[Array[String]] = {
         sc
-        .textFile("%s/%s/%s.dat".format(config.root, directory, name.toLowerCase))
+        .textFile("%s/%s/%s.dat".format(FMConfig.root, directory, name.toLowerCase))
         .map(_.split('|').map(_.trim).filter(_.size > 0))
         .filter(_.size == size)
         .setName(name)
@@ -208,7 +218,8 @@ object Foursquare extends Logging {
             this.checkinsByUserVenuePair.contains(UserVenueIds)
         }
 
-        val data = new StandardVectorizer().transform(ratingfile, Map(
+        vectorizer = Some(new StandardVectorizer())
+        val data = vectorizer.get.transform(ratingfile, Map(
             0 -> DataDomain.Categorical,
             1 -> DataDomain.Categorical,
             2 -> DataDomain.Rating
@@ -227,7 +238,8 @@ object Foursquare extends Logging {
             this.checkinsByUserVenuePair.contains(UserVenueIds)
         }
 
-        val data = new RelationVectorizer()
+        vectorizer = Some(
+            new RelationVectorizer()
         /*
             .addRelation(userfile, Map(
                 0 -> DataDomain.Rating,
@@ -240,11 +252,12 @@ object Foursquare extends Logging {
                 1 -> DataDomain.RealValued,
                 2 -> DataDomain.RealValued
             ), 1)
-            .transform(ratingfile, Map(
-                0 -> DataDomain.Categorical,
-                1 -> DataDomain.Categorical,
-                2 -> DataDomain.Rating
-            ))
+        )
+        val data = vectorizer.get.transform(ratingfile, Map(
+            0 -> DataDomain.Categorical,
+            1 -> DataDomain.Categorical,
+            2 -> DataDomain.Rating
+        ))
 
         data
     }
@@ -261,7 +274,8 @@ object Foursquare extends Logging {
             items :+ userVenuePair :+ userVenuePair :+ checkinTime :+ checkinTime
         }
 
-        val data = new StandardVectorizer().transform(ratingfile, Map(
+        vectorizer = Some(new StandardVectorizer())
+        val data = vectorizer.get.transform(ratingfile, Map(
                 0 -> DataDomain.Categorical,
                 1 -> DataDomain.Categorical,
                 2 -> DataDomain.Rating,
@@ -332,11 +346,13 @@ object Baseline extends Logging {
 
 object MovieLens extends Logging {
 
-    val directory = config.MovieLens
+    val directory = FMConfig.MovieLens
+
+    var vectorizer: Option[StandardVectorizer] = None
 
     def dataFile(sc: SparkContext, name: String, size: Int): RDD[Array[String]] = {
         sc
-        .textFile("%s/%s/%s.dat".format(config.root, directory, name.toLowerCase))
+        .textFile("%s/%s/%s.dat".format(FMConfig.root, directory, name.toLowerCase))
         .map(_.split("::").map(_.trim).filter(_.size > 0))
         .filter(_.size == size)
         .setName(name)
@@ -347,13 +363,13 @@ object MovieLens extends Logging {
 
         val ratingfile = this.dataFile(sc, "Ratings", 4)
 
-        val data = new RelationVectorizer()
-            .transform(ratingfile, Map(
-                0 -> DataDomain.Categorical,
-                1 -> DataDomain.Categorical,
-                2 -> DataDomain.Rating,
-                3 -> DataDomain.Bypass
-            ))
+        vectorizer = Some(new StandardVectorizer())
+        val data = vectorizer.get.transform(ratingfile, Map(
+            0 -> DataDomain.Categorical.withName("UserId"),
+            1 -> DataDomain.Categorical.withName("ItemId"),
+            2 -> DataDomain.Rating,
+            3 -> DataDomain.Bypass
+        ))
 
         data
     }
@@ -364,18 +380,21 @@ object MovieLens extends Logging {
         val itemsFile = this.dataFile(sc, "Movies", 3)
         val ratingfile = this.dataFile(sc, "Ratings", 4)
 
-        val data = new RelationVectorizer()
+        vectorizer = Some(
+            new RelationVectorizer()
             .addRelation(itemsFile, Map(
                 0 -> DataDomain.Rating,
                 1 -> DataDomain.Bypass,
                 2 -> DataDomain.CategoricalSet("|")
             ), 1)
-            .transform(ratingfile, Map(
-                0 -> DataDomain.Categorical,
-                1 -> DataDomain.Categorical,
-                2 -> DataDomain.Rating,
-                3 -> DataDomain.RealValued.withPreprocessor(TimeStampToMonth)
-            ))
+        )
+
+        val data = vectorizer.get.transform(ratingfile, Map(
+            0 -> DataDomain.Categorical.withName("UserId"),
+            1 -> DataDomain.Categorical.withName("ItemId"),
+            2 -> DataDomain.Rating,
+            3 -> DataDomain.RealValued.withPreprocessor(TimeStampToMonth).withName("Time1")
+        ))
 
         data
     }
@@ -387,7 +406,8 @@ object MovieLens extends Logging {
         val itemsFile = this.dataFile(sc, "Movies", 3)
         val ratingfile = this.dataFile(sc, "Ratings", 4).map( items => items :+ items(3))
 
-        val data = new RelationVectorizer()
+        vectorizer = Some(
+            new RelationVectorizer()
             .addRelation(usersFile, Map(
                 0 -> DataDomain.Rating,
                 1 -> DataDomain.Categorical,
@@ -400,15 +420,17 @@ object MovieLens extends Logging {
                 1 -> DataDomain.Bypass,
                 2 -> DataDomain.CategoricalSet("|")
             ), 1)
-            .transform(ratingfile, Map(
-                0 -> DataDomain.Categorical,
-                1 -> DataDomain.Categorical,
-                2 -> DataDomain.Rating,
-                3 -> DataDomain.RealValued
-                    .withPreprocessor(TimeStampParser).withPreprocessor(DateTimeIsAfterOfficeHour),
-                4 -> DataDomain.RealValued
-                    .withPreprocessor(TimeStampParser).withPreprocessor(DateTimeIsWeekend)
-            ))
+        )
+
+        val data = vectorizer.get.transform(ratingfile, Map(
+            0 -> DataDomain.Categorical.withName("UserId"),
+            1 -> DataDomain.Categorical.withName("ItemId"),
+            2 -> DataDomain.Rating,
+            3 -> DataDomain.RealValued.withName("Time1")
+                .withPreprocessor(TimeStampParser).withPreprocessor(DateTimeIsAfterOfficeHour),
+            4 -> DataDomain.RealValued.withName("Time2")
+                .withPreprocessor(TimeStampParser).withPreprocessor(DateTimeIsWeekend)
+        ))
 
         data
     }

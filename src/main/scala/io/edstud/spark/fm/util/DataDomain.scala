@@ -12,7 +12,7 @@ class DataDomain protected (domain: Int) extends Logging with Serializable {
     val isCategory: Boolean = domain == DataDomain.CATEGORY
     val isSet: Boolean = domain == DataDomain.SET
     val isRealValue: Boolean = domain == DataDomain.REALVALUE
-    def isTarget: Boolean = domain == DataDomain.RATING || domain == DataDomain.Identity
+    def isTarget: Boolean = (domain == DataDomain.RATING) || (domain == DataDomain.IDENTITY)
     def isRequired: Boolean = domain != DataDomain.RATING && domain != DataDomain.NONE
 
     def format(feature: String): SparseVector[Double] = {
@@ -51,6 +51,16 @@ class DataDomain protected (domain: Int) extends Logging with Serializable {
         case _ => 1
     }
 
+    private var name: Option[String] = None
+
+    def withName(name: String): this.type = {
+        this.name = Some(name)
+
+        this
+    }
+
+    def attributeName: String = name.getOrElse("")
+
     private var delimiterSymbol: Option[String] = None
 
     protected def withDelimiter(symbol: String): this.type = {
@@ -69,6 +79,11 @@ class DataDomain protected (domain: Int) extends Logging with Serializable {
         this.indexer = Some(indexer)
 
         this
+    }
+
+    def getAllIndex(): Array[String] = indexer match {
+        case Some(indexing) => indexing.keys.toArray
+        case _ => Array()
     }
 
     private var preprocessors: Array[DataPreprocessor] = Array[DataPreprocessor]()

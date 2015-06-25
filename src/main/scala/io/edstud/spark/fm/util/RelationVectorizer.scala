@@ -20,7 +20,7 @@ class RelationVectorizer() extends StandardVectorizer {
 
         val (identityRDD, featuresRDD) = identify(relationRDD, relationDomains)
         val featureDomains = super.analyzeFeatures(featuresRDD, relationDomains)
-        val formatted = super.format(featuresRDD, featureDomains)
+        val formatted = super.vectorize(featuresRDD, featureDomains)
 
         dimensions += super.computeDimension(featureDomains)
 
@@ -29,21 +29,18 @@ class RelationVectorizer() extends StandardVectorizer {
         this
     }
 
-    override protected def format(featuresRDD: RDD[Array[String]], domains: Map[Int, DataDomain]): RDD[Array[SparseVector[Double]]] = {
-        featuresRDD.map { features =>
-            features.zipWithIndex.flatMap {
-                case (feature, index) =>
-                    var features = Array[SparseVector[Double]]() :+ domains(index).format(feature)
+    override protected def vectorize(features: Array[String], domains: Map[Int, DataDomain]): Array[SparseVector[Double]] = {
+        features.zipWithIndex.flatMap { case (feature, index) =>
+            var features = Array[SparseVector[Double]]() :+ domains(index).format(feature)
 
-                    if (relations.contains(index)) {
-                        if (relations(index).contains(feature))
-                            features = features ++ relations(index)(feature) // Append relation vector
-                        else
-                            features = Array[SparseVector[Double]]() // No mapping exists, filter it
-                    }
-
-                    features
+            if (relations.contains(index)) {
+                if (relations(index).contains(feature))
+                    features = features ++ relations(index)(feature) // Append relation vector
+                else
+                    features = Array[SparseVector[Double]]() // No mapping exists, filter it
             }
+
+            features
         }
     }
 
